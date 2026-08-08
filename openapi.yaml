@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: Aegis SRE Mesh API
+  description: Autonomous Resilience Layer for Multi-Agent AI Swarms. Provides ingress webhook routing, global rate-limiting, and circuit breaker telemetry.
+  version: 1.0.0
+servers:
+  - url: https://{zerops-live-url}
+    description: Zerops Production Cluster
+paths:
+  /v1/webhook:
+    post:
+      summary: Ingest AI Agent Webhook
+      description: Secure entry point for agent payloads. Enforces HMAC-SHA256 signature validation and token-bucket rate limits.
+      parameters:
+        - name: X-Webhook-Signature
+          in: header
+          required: true
+          schema:
+            type: string
+          description: HMAC-SHA256 signature of the payload.
+        - name: X-Source-ID
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Identifier for the originating AI Agent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_url:
+                  type: string
+                  description: The downstream API the worker should route this payload to.
+      responses:
+        '202':
+          description: Payload secured in NATS JetStream mesh.
+        '401':
+          description: Missing cryptographic signature.
+        '403':
+          description: Invalid cryptographic signature.
+        '409':
+          description: Idempotency conflict (Event already processed).
+        '429':
+          description: Rate limit exceeded (Global IP limit).
+  /v1/simulate:
+    post:
+      summary: Trigger SRE Chaos Simulation
+      description: Injects 30 concurrent payloads to test distributed circuit breaking. Requires Admin Auth.
+      security:
+        - AdminCookie: []
+      responses:
+        '202':
+          description: Simulation Swarm Initiated.
+  /v1/replay:
+    post:
+      summary: Replay DLQ Event
+      description: Re-queues a failed payload from the Dead Letter Queue back into NATS JetStream.
+      parameters:
+        - name: event_id
+          in: query
+          required: true
+          schema:
+            type: string
+      security:
+        - AdminCookie: []
+      responses:
+        '200':
+          description: Webhook re-queued successfully.
+components:
+  securitySchemes:
+    AdminCookie:
+      type: apiKey
+      in: cookie
+      name: aegis_session

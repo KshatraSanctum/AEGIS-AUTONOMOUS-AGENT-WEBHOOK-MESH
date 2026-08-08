@@ -1,0 +1,62 @@
+zerops:
+  # 1. The Edge API Gateway (Public Facing)
+  - setup: ingress-api
+    build:
+      base: go@1.22
+      buildCommands:
+        - go mod tidy
+        - go build -o bin/ingress ./cmd/ingress
+      deployFiles:
+        - bin/ingress
+    run:
+      base: ubuntu
+      ports:
+        - port: 8080
+          httpSupport: true
+      envVariables:
+        PORT: "8080"
+        DATABASE_URL: ${db_connectionString}
+        REDIS_URL: ${cache_host}:${cache_port}
+        NATS_URL: nats://${broker_host}:4222
+        HMAC_SECRET_KEY: "aegis_production_secret_key_2026_xYz"
+        ADMIN_TOKEN: "aegis-enterprise-admin-778899"
+      start: ./bin/ingress
+
+  # 2. The Asynchronous Worker Engine (Private, No Public Ports)
+  - setup: worker-pool
+    build:
+      base: go@1.22
+      buildCommands:
+        - go build -o bin/worker ./cmd/worker
+      deployFiles:
+        - bin/worker
+    run:
+      base: ubuntu
+      envVariables:
+        DATABASE_URL: ${db_connectionString}
+        REDIS_URL: ${cache_host}:${cache_port}
+        NATS_URL: nats://${broker_host}:4222
+        HMAC_SECRET_KEY: "aegis_production_secret_key_2026_xYz"
+        ADMIN_TOKEN: "aegis-enterprise-admin-778899"
+      start: ./bin/worker
+
+  # 3. Message Broker (NATS JetStream)
+  - setup: broker
+    build:
+      base: ubuntu
+      buildCommands:
+        - curl -sfL https://binaries.nats.dev/nats-io/nats-server/v2.10.14 | sh
+        - mv nats-server /workspace/nats-server
+      deployFiles:
+        - nats-server
+    run:
+      base: ubuntu
+      start: ./nats-server -js --addr 0.0.0.0 --port 4222
+
+  # 4. Distributed Cache (Valkey)
+  - setup: cache
+    type: valkey
+
+  # 5. Persistent State (PostgreSQL)
+  - setup: db
+    type: postgresql

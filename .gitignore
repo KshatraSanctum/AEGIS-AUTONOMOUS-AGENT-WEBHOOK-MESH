@@ -1,0 +1,15 @@
+# Executables and Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+
+# Test binaries
+*.test
+
+# Environment and Local Config
+.env
+.idea/
+.vscode/

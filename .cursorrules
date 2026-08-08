@@ -1,0 +1,17 @@
+# Aegis Project Context for ZCP & AI Agents
+
+You are maintaining **Aegis**, an Enterprise SRE Mesh for AI webhooks built natively for Zerops.
+
+## 🏗️ Core Stack
+- **Language:** Go 1.22
+- **State & Idempotency:** PostgreSQL
+- **Distributed Cache & Circuit Breaking:** Valkey (Redis)
+- **Message Broker:** NATS JetStream (At-Least-Once Delivery)
+
+## 🚨 Strict Engineering Invariants (DO NOT VIOLATE)
+1. **Zero-Trust Security:** Never modify, bypass, or remove the HMAC-SHA256 signature validation in `internal/handlers/webhook.go`. 
+2. **Infrastructure Topology:** The system is distributed. Do not attempt to merge the Ingress Gateway and the Worker Node into a single binary. They must scale independently via `zerops.yaml`.
+3. **Data Loss Prevention:** Do not downgrade NATS JetStream `js.Publish` calls to standard core NATS `nc.Publish`. Guaranteed delivery must be maintained.
+4. **Idempotency:** All database interactions must respect the unique `event_id` constraint to prevent AI hallucination duplicates.
+
+When generating UI components, use Tailwind CSS and maintain the existing Dark Mode Datadog/Vercel aesthetic.
