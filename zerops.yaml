@@ -14,8 +14,8 @@ zerops:
       envVariables:
         PORT: "8080"
         DATABASE_URL: ${db_connectionString}
-        REDIS_URL: ${cache_host}:${cache_port}
-        NATS_URL: nats://${nats_host}:4222
+        REDIS_URL: "cache:6379"
+        NATS_URL: "nats://nats:4222"
         HMAC_SECRET_KEY: "aegis_production_secret_key_2026_XYZ"
         ADMIN_TOKEN: "aegis-enterprise-admin-778899"
       start: ./bin/ingress
@@ -31,8 +31,8 @@ zerops:
       os: ubuntu
       envVariables:
         DATABASE_URL: ${db_connectionString}
-        REDIS_URL: ${cache_host}:${cache_port}
-        NATS_URL: nats://${nats_host}:4222
+        REDIS_URL: "cache:6379"
+        NATS_URL: "nats://nats:4222"
         HMAC_SECRET_KEY: "aegis_production_secret_key_2026_XYZ"
         ADMIN_TOKEN: "aegis-enterprise-admin-778899"
       start: ./bin/worker
