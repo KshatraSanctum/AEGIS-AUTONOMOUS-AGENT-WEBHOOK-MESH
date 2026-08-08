@@ -16,6 +16,8 @@ zerops:
         DATABASE_URL: ${db_connectionString}
         REDIS_URL: "cache:6379"
         NATS_URL: "nats://nats:4222"
+        NATS_USER: ${nats_user}
+        NATS_PASSWORD: ${nats_password}
         HMAC_SECRET_KEY: "aegis_production_secret_key_2026_XYZ"
         ADMIN_TOKEN: "aegis-enterprise-admin-778899"
       start: ./bin/ingress
@@ -33,6 +35,8 @@ zerops:
         DATABASE_URL: ${db_connectionString}
         REDIS_URL: "cache:6379"
         NATS_URL: "nats://nats:4222"
+        NATS_USER: ${nats_user}
+        NATS_PASSWORD: ${nats_password}
         HMAC_SECRET_KEY: "aegis_production_secret_key_2026_XYZ"
         ADMIN_TOKEN: "aegis-enterprise-admin-778899"
       start: ./bin/worker
