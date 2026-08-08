@@ -35,24 +35,25 @@ func main() {
 	}
 	defer store.DB.Close()
 
-	// 2. NATS JetStream Connection (Strict Mode with bracket sanitization)
+	// 2. NATS Connection (Non-fatal for dashboard testing)
 	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" || strings.Contains(natsURL, "{") {
-		natsURL = "nats://127.0.0.1:4222"
+	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
+		natsURL = nats.DefaultURL
 	}
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
-		log.Fatalf("❌ NATS connection failed. Awaiting Zerops restart... %v", err)
+		log.Printf("⚠️ NATS connection deferred: %v", err)
+	} else {
+		defer nc.Close()
+		// Initialize JetStream Stream only if connected
+		if js, err := nc.JetStream(); err == nil {
+			js.AddStream(&nats.StreamConfig{
+				Name:     "WEBHOOKS",
+				Subjects: []string{"WEBHOOK.>"},
+				Storage:  nats.FileStorage,
+			})
+		}
 	}
-	defer nc.Close()
-
-	// Initialize JetStream Stream
-	js, _ := nc.JetStream()
-	js.AddStream(&nats.StreamConfig{
-		Name:     "WEBHOOKS",
-		Subjects: []string{"WEBHOOK.>"},
-		Storage:  nats.FileStorage,
-	})
 
 	// 3. Redis Connection (For Global Rate Limiting)
 	valkeyURL := os.Getenv("REDIS_URL")
