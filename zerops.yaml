@@ -1,6 +1,6 @@
 zerops:
   # 1. The Edge API Gateway (Public Facing)
-  - setup: ingress-api
+  - setup: ingress
     build:
       base: go@1.22
       buildCommands:
