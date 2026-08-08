@@ -19,7 +19,7 @@ import (
 func main() {
 	log.Println("🚀 INITIATING AEGIS INGRESS GATEWAY (JETSTREAM ENABLED)...")
 
-	// 1. Database Connection (Strict Mode with sslmode=disable fix)
+	// 1. Database Connection 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL != "" && !strings.Contains(dbURL, "sslmode=") {
 		if strings.Contains(dbURL, "?") {
@@ -35,19 +35,28 @@ func main() {
 	}
 	defer store.DB.Close()
 
-	// 2. NATS Connection (Robust fallback for dashboard testing)
+	// 2. NATS Connection (With Automatic Zerops Credentials)
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
-		natsURL = "nats://nats:4222"
+		natsUser := os.Getenv("NATS_USER")
+		natsPass := os.Getenv("NATS_PASSWORD")
+		natsHost := os.Getenv("NATS_HOSTNAME")
+		if natsHost == "" {
+			natsHost = "nats"
+		}
+		
+		if natsUser != "" && natsPass != "" {
+			natsURL = "nats://" + natsUser + ":" + natsPass + "@" + natsHost + ":4222"
+		} else {
+			natsURL = "nats://" + natsHost + ":4222"
+		}
 	}
+	
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
-		log.Printf("⚠️ NATS connection failed (%v). Running in offline mode for dashboard testing...", err)
-		// Connect to an empty/buffered mock or handle gracefully if needed, 
-		// but since handlers expect *nats.Conn, let's allow a fallback or ensure it doesn't panic.
+		log.Printf("⚠️ NATS connection deferred (%v). Attempting background reconnect...", err)
 	} else {
 		defer nc.Close()
-		// Initialize JetStream Stream only if connected
 		if js, err := nc.JetStream(); err == nil {
 			js.AddStream(&nats.StreamConfig{
 				Name:     "WEBHOOKS",
@@ -57,7 +66,7 @@ func main() {
 		}
 	}
 
-	// 3. Redis Connection (For Global Rate Limiting)
+	// 3. Redis Connection 
 	valkeyURL := os.Getenv("REDIS_URL")
 	if valkeyURL == "" {
 		valkeyURL = "localhost:6379"
@@ -73,7 +82,6 @@ func main() {
 		adminToken = "super-secret-admin-123"
 	}
 
-	// Fetch port here so it can be passed to SimulatorHandler securely
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -94,7 +102,6 @@ func main() {
 
 	mux.Handle("/v1/webhook", webhookHandler)
 
-	// Add the login handler for the Secure Cookie session
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			r.ParseForm()
@@ -103,15 +110,14 @@ func main() {
 				Name:     "aegis_session",
 				Value:    token,
 				Path:     "/",
-				HttpOnly: true,  // Prevents XSS attacks
-				Secure:   false, // Set to true if deploying with HTTPS
+				HttpOnly: true,  
+				Secure:   false, 
 				MaxAge:   3600,
 			})
 			http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
 		}
 	})
 
-	// Apply Zero-Trust Security to Control Plane
 	mux.Handle("/dashboard", adminAuth(dashboardHandler, adminToken))
 	mux.Handle("/v1/replay", adminAuth(replayHandler, adminToken))
 	mux.Handle("/v1/simulate", adminAuth(simulatorHandler, adminToken))
@@ -136,12 +142,10 @@ func main() {
 	log.Println("🛑 Gracefully shutting down...")
 }
 
-// adminAuth enforces Zero-Trust security on the Control Plane via Secure Cookies
 func adminAuth(next http.Handler, validToken string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("aegis_session")
 		if err != nil || cookie.Value != validToken {
-			// If unauthorized, show a professional 401/Login prompt instead of raw text
 			w.Header().Set("Content-Type", "text/html")
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`

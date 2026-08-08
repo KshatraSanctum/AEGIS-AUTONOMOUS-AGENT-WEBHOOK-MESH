@@ -43,6 +43,7 @@ var ctx = context.Background()
 func main() {
 	log.Println("🚀 INITIATING AEGIS WORKER: JetStream Distributed SRE Engine...")
 
+	// 1. Database Connection
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5432/webhook_mesh?sslmode=disable"
@@ -60,9 +61,21 @@ func main() {
 	}
 	defer db.Close()
 
+	// 2. NATS Connection (With Automatic Zerops Credentials)
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
-		natsURL = "nats://nats:4222" // <--- CHANGED THIS LINE
+		natsUser := os.Getenv("NATS_USER")
+		natsPass := os.Getenv("NATS_PASSWORD")
+		natsHost := os.Getenv("NATS_HOSTNAME")
+		if natsHost == "" {
+			natsHost = "nats"
+		}
+		
+		if natsUser != "" && natsPass != "" {
+			natsURL = "nats://" + natsUser + ":" + natsPass + "@" + natsHost + ":4222"
+		} else {
+			natsURL = "nats://" + natsHost + ":4222"
+		}
 	}
 	
 	nc, err := nats.Connect(natsURL)
@@ -71,13 +84,14 @@ func main() {
 	}
 	defer nc.Close()
 
+	// 3. Redis Connection
 	valkeyURL := os.Getenv("REDIS_URL")
 	if valkeyURL == "" {
 		valkeyURL = "localhost:6379"
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
 
-	// Connect to JetStream
+	// 4. Connect to JetStream
 	js, err := nc.JetStream()
 	if err != nil {
 		log.Fatalf("❌ JetStream initialization failed: %v", err)
