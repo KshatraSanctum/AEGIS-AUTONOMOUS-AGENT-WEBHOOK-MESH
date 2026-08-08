@@ -61,9 +61,10 @@ func main() {
 	defer db.Close()
 
 	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" {
-		natsURL = nats.DefaultURL
+	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
+		natsURL = "nats://nats:4222" // <--- CHANGED THIS LINE
 	}
+	
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Fatalf("❌ NATS failed: %v", err)
