@@ -43,7 +43,6 @@ var ctx = context.Background()
 func main() {
 	log.Println("🚀 INITIATING AEGIS WORKER: JetStream Distributed SRE Engine...")
 
-	// 1. Database Connection
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5432/webhook_mesh?sslmode=disable"
@@ -61,15 +60,17 @@ func main() {
 	}
 	defer db.Close()
 
-	// 2. NATS Connection (With Automatic Zerops Credentials)
+	// FIXED: Case-insensitive check for Zerops NATS credentials
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
-		natsUser := os.Getenv("NATS_USER")
-		natsPass := os.Getenv("NATS_PASSWORD")
-		natsHost := os.Getenv("NATS_HOSTNAME")
-		if natsHost == "" {
-			natsHost = "nats"
-		}
+		natsUser := os.Getenv("nats_user")
+		if natsUser == "" { natsUser = os.Getenv("NATS_USER") }
+		
+		natsPass := os.Getenv("nats_password")
+		if natsPass == "" { natsPass = os.Getenv("NATS_PASSWORD") }
+		
+		natsHost := os.Getenv("nats_hostname")
+		if natsHost == "" { natsHost = "nats" }
 		
 		if natsUser != "" && natsPass != "" {
 			natsURL = "nats://" + natsUser + ":" + natsPass + "@" + natsHost + ":4222"
@@ -84,31 +85,25 @@ func main() {
 	}
 	defer nc.Close()
 
-	// 3. Redis Connection
+	// FIXED: Safely override broken environment variables for Valkey/Redis
 	valkeyURL := os.Getenv("REDIS_URL")
-	if valkeyURL == "" {
-		valkeyURL = "localhost:6379"
+	if valkeyURL == "" || strings.Contains(valkeyURL, "{") || strings.Contains(valkeyURL, "$") {
+		valkeyURL = "cache:6379" // Pointing directly to your 'cache' service container
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
 
-	// 4. Connect to JetStream
 	js, err := nc.JetStream()
 	if err != nil {
 		log.Fatalf("❌ JetStream initialization failed: %v", err)
 	}
 
-	// JetStream Consumer - Guaranteeing At-Least-Once Delivery
 	_, err = js.Subscribe("WEBHOOK.events", func(m *nats.Msg) {
 		var payload WebhookPayload
 		if err := json.Unmarshal(m.Data, &payload); err != nil {
-			m.Ack() // Ack corrupted messages so they don't block the queue
+			m.Ack()
 			return
 		}
-
-		// Process payload, wait for result
 		processWebhookWithTriage(db, rdb, payload)
-
-		// ONLY acknowledge the message after successful delivery OR successful DLQ insertion
 		m.Ack()
 	}, nats.Durable("worker-group"), nats.ManualAck())
 

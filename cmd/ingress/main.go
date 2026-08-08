@@ -19,7 +19,6 @@ import (
 func main() {
 	log.Println("🚀 INITIATING AEGIS INGRESS GATEWAY (JETSTREAM ENABLED)...")
 
-	// 1. Database Connection 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL != "" && !strings.Contains(dbURL, "sslmode=") {
 		if strings.Contains(dbURL, "?") {
@@ -35,15 +34,17 @@ func main() {
 	}
 	defer store.DB.Close()
 
-	// 2. NATS Connection (With Automatic Zerops Credentials)
+	// FIXED: Case-insensitive check for Zerops NATS credentials
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
-		natsUser := os.Getenv("NATS_USER")
-		natsPass := os.Getenv("NATS_PASSWORD")
-		natsHost := os.Getenv("NATS_HOSTNAME")
-		if natsHost == "" {
-			natsHost = "nats"
-		}
+		natsUser := os.Getenv("nats_user")
+		if natsUser == "" { natsUser = os.Getenv("NATS_USER") }
+		
+		natsPass := os.Getenv("nats_password")
+		if natsPass == "" { natsPass = os.Getenv("NATS_PASSWORD") }
+		
+		natsHost := os.Getenv("nats_hostname")
+		if natsHost == "" { natsHost = "nats" }
 		
 		if natsUser != "" && natsPass != "" {
 			natsURL = "nats://" + natsUser + ":" + natsPass + "@" + natsHost + ":4222"
@@ -66,10 +67,10 @@ func main() {
 		}
 	}
 
-	// 3. Redis Connection 
+	// FIXED: Safely override broken environment variables for Valkey/Redis
 	valkeyURL := os.Getenv("REDIS_URL")
-	if valkeyURL == "" {
-		valkeyURL = "localhost:6379"
+	if valkeyURL == "" || strings.Contains(valkeyURL, "{") || strings.Contains(valkeyURL, "$") {
+		valkeyURL = "cache:6379" // Pointing directly to your 'cache' service container
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
 
@@ -87,7 +88,6 @@ func main() {
 		port = "8080"
 	}
 
-	// 4. Initialize Handlers
 	webhookHandler := handlers.NewWebhookHandler(store, nc, rdb, secret)
 	dashboardHandler := handlers.NewDashboardHandler(store)
 	replayHandler := handlers.NewReplayHandler(store, nc)
