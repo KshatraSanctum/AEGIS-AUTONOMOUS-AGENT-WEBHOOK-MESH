@@ -34,26 +34,28 @@ func main() {
 	}
 	defer store.DB.Close()
 
-	// FIXED: Case-insensitive check for Zerops NATS credentials
+	// FIXED: Safe Credential Handling via NATS Options
+	natsHost := os.Getenv("nats_hostname")
+	if natsHost == "" { natsHost = os.Getenv("NATS_HOSTNAME") }
+	if natsHost == "" { natsHost = "nats" }
+	
 	natsURL := os.Getenv("NATS_URL")
 	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
-		natsUser := os.Getenv("nats_user")
-		if natsUser == "" { natsUser = os.Getenv("NATS_USER") }
-		
-		natsPass := os.Getenv("nats_password")
-		if natsPass == "" { natsPass = os.Getenv("NATS_PASSWORD") }
-		
-		natsHost := os.Getenv("nats_hostname")
-		if natsHost == "" { natsHost = "nats" }
-		
-		if natsUser != "" && natsPass != "" {
-			natsURL = "nats://" + natsUser + ":" + natsPass + "@" + natsHost + ":4222"
-		} else {
-			natsURL = "nats://" + natsHost + ":4222"
-		}
+		natsURL = "nats://" + natsHost + ":4222"
 	}
 	
-	nc, err := nats.Connect(natsURL)
+	natsUser := os.Getenv("nats_user")
+	if natsUser == "" { natsUser = os.Getenv("NATS_USER") }
+	
+	natsPass := os.Getenv("nats_password")
+	if natsPass == "" { natsPass = os.Getenv("NATS_PASSWORD") }
+
+	var opts []nats.Option
+	if natsUser != "" && natsPass != "" {
+		opts = append(opts, nats.UserInfo(natsUser, natsPass))
+	}
+	
+	nc, err := nats.Connect(natsURL, opts...)
 	if err != nil {
 		log.Printf("⚠️ NATS connection deferred (%v). Attempting background reconnect...", err)
 	} else {
@@ -67,10 +69,9 @@ func main() {
 		}
 	}
 
-	// FIXED: Safely override broken environment variables for Valkey/Redis
 	valkeyURL := os.Getenv("REDIS_URL")
 	if valkeyURL == "" || strings.Contains(valkeyURL, "{") || strings.Contains(valkeyURL, "$") {
-		valkeyURL = "cache:6379" // Pointing directly to your 'cache' service container
+		valkeyURL = "cache:6379"
 	}
 	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
 
