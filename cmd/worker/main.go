@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,24 +44,43 @@ func main() {
 	log.Println("🚀 INITIATING AEGIS WORKER: JetStream Distributed SRE Engine...")
 
 	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" { dbURL = "postgres://postgres:postgres@localhost:5432/webhook_mesh?sslmode=disable" }
+	if dbURL == "" {
+		dbURL = "postgres://postgres:postgres@localhost:5432/webhook_mesh?sslmode=disable"
+	} else if !strings.Contains(dbURL, "sslmode=") {
+		if strings.Contains(dbURL, "?") {
+			dbURL += "&sslmode=disable"
+		} else {
+			dbURL += "?sslmode=disable"
+		}
+	}
+
 	db, err := sql.Open("postgres", dbURL)
-	if err != nil { log.Fatalf("❌ DB failed: %v", err) }
+	if err != nil {
+		log.Fatalf("❌ DB failed: %v", err)
+	}
 	defer db.Close()
 
 	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" { natsURL = nats.DefaultURL }
+	if natsURL == "" {
+		natsURL = nats.DefaultURL
+	}
 	nc, err := nats.Connect(natsURL)
-	if err != nil { log.Fatalf("❌ NATS failed: %v", err) }
+	if err != nil {
+		log.Fatalf("❌ NATS failed: %v", err)
+	}
 	defer nc.Close()
 
 	valkeyURL := os.Getenv("REDIS_URL")
-	if valkeyURL == "" { valkeyURL = "localhost:6379" }
+	if valkeyURL == "" {
+		valkeyURL = "localhost:6379"
+	}
 	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
 
 	// Connect to JetStream
 	js, err := nc.JetStream()
-	if err != nil { log.Fatalf("❌ JetStream initialization failed: %v", err) }
+	if err != nil {
+		log.Fatalf("❌ JetStream initialization failed: %v", err)
+	}
 
 	// JetStream Consumer - Guaranteeing At-Least-Once Delivery
 	_, err = js.Subscribe("WEBHOOK.events", func(m *nats.Msg) {
@@ -69,12 +89,12 @@ func main() {
 			m.Ack() // Ack corrupted messages so they don't block the queue
 			return
 		}
-		
+
 		// Process payload, wait for result
 		processWebhookWithTriage(db, rdb, payload)
-		
+
 		// ONLY acknowledge the message after successful delivery OR successful DLQ insertion
-		m.Ack() 
+		m.Ack()
 	}, nats.Durable("worker-group"), nats.ManualAck())
 
 	log.Println("🎧 Aegis Worker listening for AI Agent streams via JetStream...")
@@ -101,7 +121,7 @@ func processWebhookWithTriage(db *sql.DB, rdb *redis.Client, payload WebhookPayl
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		req, _ := http.NewRequest("POST", targetAPI, bytes.NewBuffer(payload.Payload))
 		req.Header.Set("Content-Type", "application/json")
@@ -127,12 +147,12 @@ func processWebhookWithTriage(db *sql.DB, rdb *redis.Client, payload WebhookPayl
 			time.Sleep(baseBackoff * time.Duration(1<<attempt))
 			continue
 		}
-		
+
 		defer resp.Body.Close()
 		_, _ = io.ReadAll(resp.Body)
 
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			rdb.Del(ctx, failKey) 
+			rdb.Del(ctx, failKey)
 			log.Printf("[✅ DELIVERED] Agent: %s | Target: %s", payload.SourceID, targetAPI)
 			return
 		}
@@ -145,7 +165,9 @@ func processWebhookWithTriage(db *sql.DB, rdb *redis.Client, payload WebhookPayl
 }
 
 func getStatus(resp *http.Response) int {
-	if resp == nil { return 0 }
+	if resp == nil {
+		return 0
+	}
 	return resp.StatusCode
 }
 

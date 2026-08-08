@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,8 +19,16 @@ import (
 func main() {
 	log.Println("🚀 INITIATING AEGIS INGRESS GATEWAY (JETSTREAM ENABLED)...")
 
-	// 1. Database Connection (Strict Mode)
+	// 1. Database Connection (Strict Mode with sslmode=disable fix)
 	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL != "" && !strings.Contains(dbURL, "sslmode=") {
+		if strings.Contains(dbURL, "?") {
+			dbURL += "&sslmode=disable"
+		} else {
+			dbURL += "?sslmode=disable"
+		}
+	}
+
 	store, err := storage.NewPostgresStore(dbURL)
 	if err != nil {
 		log.Fatalf("❌ DB connection failed. Awaiting Zerops restart... %v", err)
@@ -74,12 +83,12 @@ func main() {
 	simulatorHandler := handlers.NewSimulatorHandler(secret, port)
 
 	mux := http.NewServeMux()
-	
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	
+
 	mux.Handle("/v1/webhook", webhookHandler)
 
 	// Add the login handler for the Secure Cookie session
