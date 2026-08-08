@@ -7,7 +7,7 @@ zerops:
       deployFiles:
         - bin/ingress
     run:
-      base: ubuntu
+      os: ubuntu
       ports:
         - port: 8080
           httpSupport: true
@@ -28,7 +28,7 @@ zerops:
       deployFiles:
         - bin/worker
     run:
-      base: ubuntu
+      os: ubuntu
       envVariables:
         DATABASE_URL: ${db_connectionString}
         REDIS_URL: ${cache_host}:${cache_port}
