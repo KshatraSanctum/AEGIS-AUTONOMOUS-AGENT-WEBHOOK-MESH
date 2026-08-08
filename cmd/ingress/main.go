@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -16,10 +17,19 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+func getEnvFallback(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" && !strings.Contains(v, "{") {
+			return v
+		}
+	}
+	return ""
+}
+
 func main() {
 	log.Println("🚀 INITIATING AEGIS INGRESS GATEWAY (JETSTREAM ENABLED)...")
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := getEnvFallback("DATABASE_URL", "db_connectionString")
 	if dbURL != "" && !strings.Contains(dbURL, "sslmode=") {
 		if strings.Contains(dbURL, "?") {
 			dbURL += "&sslmode=disable"
@@ -30,31 +40,27 @@ func main() {
 
 	store, err := storage.NewPostgresStore(dbURL)
 	if err != nil {
-		log.Fatalf("❌ DB connection failed. Awaiting Zerops restart... %v", err)
+		log.Fatalf("❌ DB connection failed: %v", err)
 	}
 	defer store.DB.Close()
 
-	// FIXED: Safe Credential Handling via NATS Options
-	natsHost := os.Getenv("nats_hostname")
-	if natsHost == "" { natsHost = os.Getenv("NATS_HOSTNAME") }
-	if natsHost == "" { natsHost = "nats" }
-	
-	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" || strings.Contains(natsURL, "{") || strings.Contains(natsURL, "}") {
-		natsURL = "nats://" + natsHost + ":4222"
+	natsUser := getEnvFallback("NATS_USER", "nats_user")
+	natsPass := getEnvFallback("NATS_PASSWORD", "nats_password")
+	natsHost := getEnvFallback("NATS_HOST", "nats_hostname")
+	if natsHost == "" {
+		natsHost = "nats"
 	}
-	
-	natsUser := os.Getenv("nats_user")
-	if natsUser == "" { natsUser = os.Getenv("NATS_USER") }
-	
-	natsPass := os.Getenv("nats_password")
-	if natsPass == "" { natsPass = os.Getenv("NATS_PASSWORD") }
 
-	var opts []nats.Option
+	opts := []nats.Option{
+		nats.Timeout(10 * time.Second),
+		nats.RetryOnFailedConnect(true),
+		nats.MaxReconnects(-1),
+	}
 	if natsUser != "" && natsPass != "" {
 		opts = append(opts, nats.UserInfo(natsUser, natsPass))
 	}
-	
+
+	natsURL := fmt.Sprintf("nats://%s:4222", natsHost)
 	nc, err := nats.Connect(natsURL, opts...)
 	if err != nil {
 		log.Printf("⚠️ NATS connection deferred (%v). Attempting background reconnect...", err)
@@ -69,11 +75,16 @@ func main() {
 		}
 	}
 
-	valkeyURL := os.Getenv("REDIS_URL")
-	if valkeyURL == "" || strings.Contains(valkeyURL, "{") || strings.Contains(valkeyURL, "$") {
-		valkeyURL = "cache:6379"
+	redisHost := getEnvFallback("REDIS_HOST", "cache_hostname")
+	if redisHost == "" {
+		redisHost = "cache"
 	}
-	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
+	redisPort := getEnvFallback("REDIS_PORT", "cache_port")
+	if redisPort == "" {
+		redisPort = "6379"
+	}
+
+	rdb := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%s", redisHost, redisPort)})
 
 	secret := os.Getenv("HMAC_SECRET_KEY")
 	if secret == "" {
@@ -111,8 +122,8 @@ func main() {
 				Name:     "aegis_session",
 				Value:    token,
 				Path:     "/",
-				HttpOnly: true,  
-				Secure:   false, 
+				HttpOnly: true,
+				Secure:   false,
 				MaxAge:   3600,
 			})
 			http.Redirect(w, r, "/dashboard", http.StatusSeeOther)

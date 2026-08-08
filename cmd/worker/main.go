@@ -40,10 +40,19 @@ const (
 
 var ctx = context.Background()
 
+func getEnvFallback(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" && !strings.Contains(v, "{") {
+			return v
+		}
+	}
+	return ""
+}
+
 func main() {
 	log.Println("🚀 INITIATING AEGIS WORKER: JetStream Distributed SRE Engine...")
 
-	dbURL := os.Getenv("DATABASE_URL")
+	dbURL := getEnvFallback("DATABASE_URL", "db_connectionString")
 	if dbURL == "" {
 		dbURL = "postgres://postgres:postgres@localhost:5432/webhook_mesh?sslmode=disable"
 	} else if !strings.Contains(dbURL, "sslmode=") {
@@ -60,30 +69,39 @@ func main() {
 	}
 	defer db.Close()
 
-	// Bulletproof Native Zerops NATS Connection
-	natsConnStr := os.Getenv("nats_connectionString")
-	if natsConnStr == "" {
-		natsHost := os.Getenv("nats_hostname")
-		if natsHost == "" {
-			natsHost = "nats"
-		}
-		natsConnStr = "nats://" + os.Getenv("nats_user") + ":" + os.Getenv("nats_password") + "@" + natsHost + ":4222"
+	natsUser := getEnvFallback("NATS_USER", "nats_user")
+	natsPass := getEnvFallback("NATS_PASSWORD", "nats_password")
+	natsHost := getEnvFallback("NATS_HOST", "nats_hostname")
+	if natsHost == "" {
+		natsHost = "nats"
 	}
-	nc, err := nats.Connect(natsConnStr)
+
+	opts := []nats.Option{
+		nats.Timeout(10 * time.Second),
+		nats.RetryOnFailedConnect(true),
+		nats.MaxReconnects(-1),
+	}
+	if natsUser != "" && natsPass != "" {
+		opts = append(opts, nats.UserInfo(natsUser, natsPass))
+	}
+
+	natsURL := fmt.Sprintf("nats://%s:4222", natsHost)
+	nc, err := nats.Connect(natsURL, opts...)
 	if err != nil {
-		// Final fallback for local/direct binding
-		nc, err = nats.Connect("nats://nats:4222", nats.UserInfo(os.Getenv("nats_user"), os.Getenv("nats_password")))
-		if err != nil {
-			log.Fatalf("❌ NATS failed: %v", err)
-		}
+		log.Fatalf("❌ NATS failed to connect to %s: %v", natsURL, err)
 	}
 	defer nc.Close()
 
-	valkeyURL := os.Getenv("REDIS_URL")
-	if valkeyURL == "" || strings.Contains(valkeyURL, "{") || strings.Contains(valkeyURL, "$") {
-		valkeyURL = "cache:6379"
+	redisHost := getEnvFallback("REDIS_HOST", "cache_hostname")
+	if redisHost == "" {
+		redisHost = "cache"
 	}
-	rdb := redis.NewClient(&redis.Options{Addr: valkeyURL})
+	redisPort := getEnvFallback("REDIS_PORT", "cache_port")
+	if redisPort == "" {
+		redisPort = "6379"
+	}
+
+	rdb := redis.NewClient(&redis.Options{Addr: fmt.Sprintf("%s:%s", redisHost, redisPort)})
 
 	js, err := nc.JetStream()
 	if err != nil {
@@ -108,8 +126,6 @@ func main() {
 }
 
 func processWebhookWithTriage(db *sql.DB, rdb *redis.Client, payload WebhookPayload) {
-	// 🚨 ULTIMATE FAIL-SAFE FOR HACKATHON SIMULATION 🚨
-	// Instantly bypasses network loops and avoids DB conflicts by forcing a unique ID
 	if payload.SourceID == "AutoGPT-Omega" || strings.Contains(string(payload.Payload), "simulate") || payload.SourceID == "" {
 		payload.EventID = fmt.Sprintf("%s-%d", payload.EventID, time.Now().UnixMilli())
 		log.Printf("[🛑 SIMULATION TRIGGERED] Routing %s directly to DLQ.", payload.EventID)
@@ -160,16 +176,18 @@ func processWebhookWithTriage(db *sql.DB, rdb *redis.Client, payload WebhookPayl
 			continue
 		}
 
-		defer resp.Body.Close()
-		_, _ = io.ReadAll(resp.Body)
+		if resp != nil && resp.Body != nil {
+			defer resp.Body.Close()
+			_, _ = io.ReadAll(resp.Body)
+		}
 
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			rdb.Del(ctx, failKey)
 			log.Printf("[✅ DELIVERED] Agent: %s | Target: %s", payload.SourceID, targetAPI)
 			return
 		}
 
-		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
+		if resp != nil && resp.StatusCode >= 400 && resp.StatusCode < 500 {
 			sendToDLQ(db, payload, fmt.Sprintf("Agent Data Hallucination (HTTP %d)", resp.StatusCode))
 			return
 		}
