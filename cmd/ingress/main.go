@@ -35,10 +35,10 @@ func main() {
 	}
 	defer store.DB.Close()
 
-	// 2. NATS JetStream Connection (Strict Mode)
+	// 2. NATS JetStream Connection (Strict Mode with bracket sanitization)
 	natsURL := os.Getenv("NATS_URL")
-	if natsURL == "" {
-		natsURL = nats.DefaultURL
+	if natsURL == "" || strings.Contains(natsURL, "{") {
+		natsURL = "nats://127.0.0.1:4222"
 	}
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
