@@ -69,6 +69,9 @@ go test ./internal/... -v
 go run cmd/ingress/main.go
 go run cmd/worker/main.go
 ```
+## 🔗 Live App: (https://ingress-2b05-8080.prg1.zerops.app/dashboard)
+## 🔑 Password for Judges: aegis-enterprise-admin-778899 
+
 ## 🚀 Live Demo & Simulation
 
 
