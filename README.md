@@ -69,3 +69,11 @@ go test ./internal/... -v
 go run cmd/ingress/main.go
 go run cmd/worker/main.go
 ```
+## 🚀 Live Demo & Simulation
+
+
+https://github.com/user-attachments/assets/58bd6322-465e-4077-a58c-5d74f4427300
+
+
+
+
